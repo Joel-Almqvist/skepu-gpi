@@ -7,3 +7,6 @@ bandwidthMeasures.dat
 .ycm_extra_conf.py
 *.o
 .DS_Store
+
+examples/reduce-dir
+install
