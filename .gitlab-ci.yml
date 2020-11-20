@@ -11,11 +11,11 @@ build:
     paths:
       - build
   script:
-    - mkdir build
-    - cd build
-    - cmake ..
+    - mkdir build && cd build
+    - cmake -DSKEPU_BUILD_EXAMPLES=ON -DSKEPU_HEADERS_ENABLE_TESTING=OFF ..
     - make
   only:
+    - web
     - merge_requests
 
 test:
@@ -24,8 +24,9 @@ test:
     - build
   script:
     - cd build
-    - ctest
+    - ctest -VV
   only:
+    - web
     - merge_requests
 
 # vi:ts=2 sw=2 et

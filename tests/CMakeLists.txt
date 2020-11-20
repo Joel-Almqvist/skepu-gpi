@@ -31,5 +31,8 @@ add_subdirectory(vector)
 add_subdirectory(tensor3)
 
 # Skeletons
+add_subdirectory(backend)
+add_subdirectory(codegen)
+add_subdirectory(containers)
 add_subdirectory(map)
 add_subdirectory(reduce)

@@ -1,2 +1,14 @@
 build
 .ycm*
+examples/bin
+build-src-dir
+build
+skepu
+skepu.tgz
+bandwidthMeasures.dat
+.ycm_extra_conf.py
+*.o
+.DS_Store
+
+examples/reduce-dir
+install
