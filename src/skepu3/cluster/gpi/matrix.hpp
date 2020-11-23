@@ -23,6 +23,8 @@ namespace skepu{
     // and in all other containers. This is an ad hoc solution due to being a demo
     template<typename TT>
     friend class Reduce1D;
+    template<typename TT>
+    friend class Map1D;
   private:
     int local_size;
 
@@ -156,6 +158,21 @@ namespace skepu{
         );
 
         return ((T*) comm_seg_ptr)[0];
+      }
+    }
+
+
+
+    // WARNING Only use this for debugging, it has very poor performance
+    void print(){
+      for(int i = 0; i < nr_nodes; i++){
+        if(i == rank){
+          for(int j = 0; j < local_size; j++){
+            std::cout << ((T*) cont_seg_ptr)[j] << ", ";
+          }
+          std::cout << std::endl;
+        }
+        gaspi_barrier(GASPI_GROUP_ALL, GASPI_BLOCK);
       }
     }
 

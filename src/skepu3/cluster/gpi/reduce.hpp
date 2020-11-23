@@ -1,13 +1,10 @@
 #ifndef REDUCE_HPP
 #define REDUCE_HPP
 
-#include <iostream>
 #include <matrix.hpp>
 #include <type_traits>
 #include <numeric>
 #include <cmath>
-
-// TODO remove the include of IO stream for final version
 
 #include <GASPI.h>
 
@@ -26,7 +23,7 @@ namespace skepu{
      typename Container::value_type operator()(Container& cont){
        using T = typename Container::value_type;
 
-       if(skepu::is_skepu_container<Container>::value){
+       if(is_skepu_container<Container>::value){
 
          // TODO Find a better solution than a barrier.
          // Currently it prevents multiple operations from modifying
