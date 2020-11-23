@@ -51,8 +51,7 @@ namespace skepu{
     public:
 
       virtual ~Container(){
-
-        gaspi_wait(queue, GASPI_BLOCK);
+        gaspi_barrier(GASPI_GROUP_ALL, GASPI_BLOCK);
         curr_containers--;
         if(curr_containers == 0){
           // WARNING This is not a good solution, the same program may call
