@@ -25,8 +25,16 @@ namespace skepu{
     friend class Reduce1D;
     template<typename TT>
     friend class Map1D;
+    template<typename TT>
+    friend class Scan1D;
   private:
     int local_size;
+    long unsigned comm_size;
+
+    // This determines how many objects of type T the communication buffer
+    // will be able to fit. Too small buffer may cause major issues with Scan.
+    // WARNING must be even
+    static const int NR_OBJECTS_IN_COMM_BUFFER = 40;
 
     // Indiciates which indeces this partition handles
     int start_i;
@@ -35,6 +43,7 @@ namespace skepu{
     int step;
 
   public:
+
     using value_type = T;
 
     Matrix(){
@@ -61,10 +70,19 @@ namespace skepu{
       local_size = end_i - start_i + 1;
 
 
-      // Allow for buffering 2 * log2(N) messages
+
+      comm_size = 2*sizeof(int) + sizeof(T) * NR_OBJECTS_IN_COMM_BUFFER;
+
+      // Guarantee that buffer is large enough for Reduce to work
+      if(comm_size < 2 * (sizeof(T) * ((int) std::ceil(std::log2(nr_nodes))) + 1)){
+        throw std::invalid_argument( "Communication buffer is too small. "
+      "It needs to be atleast 2 * log2(#nodes)" );
+      }
+
+
       assert(gaspi_segment_create(
         comm_segment_id,
-        gaspi_size_t{2 * (sizeof(T) * ((int) std::ceil(std::log2(nr_nodes))) + 1)},
+        gaspi_size_t{comm_size},
         GASPI_GROUP_ALL,
         GASPI_BLOCK,
         GASPI_ALLOC_DEFAULT

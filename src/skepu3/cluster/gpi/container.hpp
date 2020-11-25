@@ -16,6 +16,7 @@ namespace skepu{
       // This is only a temporary, non scalable solution
       friend class Reduce1D;
       friend class Map1D;
+      friend class Scan1D;
     private:
       static int counter;
       //protected:
