@@ -15,20 +15,18 @@ main(){
 
   skepu::Matrix<long> matrix2{4,4};
 
-  skepu::Matrix<long> matrix{4,4,3};
+  skepu::Matrix<long> matrix{20,20,3};
 
+
+  matrix.set(0, 2);
   matrix.set(1, 2);
-  matrix.set(5, 2);
-
-  matrix.set(6, 2);
-  matrix.set(11, 2);
-  matrix.set(15, 2);
+  matrix.set(2, 2);
 
 
 
 
   auto scan = skepu::Scan([](long a) bool {
-    return a == 2;
+    return a == 3;
   });
 
   std::vector<int> v{};
