@@ -9,7 +9,7 @@
 
 #include <utils.hpp>
 #include <container.hpp>
-#include<reduce.hpp>
+#include <reduce.hpp>
 #include <cmath>
 // TODO remove include iostream (among more?)
 
@@ -26,7 +26,7 @@ namespace skepu{
     template<typename TT>
     friend class Map1D;
     template<typename TT>
-    friend class Scan1D;
+    friend class FilterClass;
   private:
     int local_size;
     long unsigned comm_size;

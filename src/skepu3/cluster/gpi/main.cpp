@@ -1,7 +1,7 @@
 #include <iostream>
 #include <reduce.hpp>
 #include <map.hpp>
-#include <scan.hpp>
+#include <filter.hpp>
 #include <GASPI.h>
 #include <vector>
 
@@ -25,13 +25,13 @@ main(){
 
 
 
-  auto scan = skepu::Scan([](long a) bool {
+  auto filter = skepu::Filter([](long a) bool {
     return a == 3;
   });
 
   std::vector<int> v{};
 
-  scan(v, matrix);
+  filter(v, matrix);
 
   std::cout << v.size() << std::endl;
 

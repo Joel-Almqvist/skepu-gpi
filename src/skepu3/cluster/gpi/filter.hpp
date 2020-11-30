@@ -1,5 +1,5 @@
-#ifndef SCAN_HPP
-#define SCAN_HPP
+#ifndef FLITER_HPP
+#define FILTER_HPP
 
 #include <matrix.hpp>
 #include <type_traits>
@@ -9,20 +9,15 @@
 
 #include <GASPI.h>
 
-// NOTE This skeleton will fail if the scan function gives too many results.
-// Atmost NR_OBJECTS_IN_COMM_BUFFER / 2 may be found within a single partition.
-// The value on this design parameter is a tradeoff between memory allocation
-// and user friendliness, feel free to change it (it is defined within Matrix).
-
 namespace skepu{
 
   template<typename Func>
-  class Scan1D{
+  class FilterClass{
   private:
     Func func;
   public:
 
-    Scan1D(Func func) : func{func} {};
+    FilterClass(Func func) : func{func} {};
 
     template<typename STLContainer, typename SkepuContainer>
      auto operator()(STLContainer& dest, SkepuContainer& cont) ->
@@ -60,8 +55,6 @@ namespace skepu{
          int max_elems_per_iteration = cont.NR_OBJECTS_IN_COMM_BUFFER / 2;
          int received_elems[cont.nr_nodes] = {0};
          received_elems[cont.rank] = nr_elems;
-
-         // TODO check if all elems fit inside comm buffer
 
 
          ((int*) cont.comm_seg_ptr)[0] = nr_elems;
@@ -272,9 +265,9 @@ namespace skepu{
   // Template deduction for classes are not allowed in c++11
   // This solves this problem
   template<typename Func>
-  Scan1D<Func> Scan(Func func){
-    return Scan1D<Func>{func};
+  FilterClass<Func> Filter(Func func){
+    return FilterClass<Func>{func};
   }
 
 } // end of namespace skepu
-#endif // SCAN_HPP
+#endif // FILTER_HPP
