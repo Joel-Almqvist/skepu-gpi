@@ -32,8 +32,8 @@ namespace skepu{
        using T = typename SkepuContainer::value_type;
 
 
-       // WARNING constexpr might not be available
-       if constexpr(is_skepu_container<SkepuContainer>::value){
+       // Could add constexpr if allowed by compiler
+       if(is_skepu_container<SkepuContainer>::value){
 
          const long unsigned COMM_BUFFER_OFFSET{
            sizeof(int) + sizeof(T) * cont.NR_OBJECTS_IN_COMM_BUFFER / 2};

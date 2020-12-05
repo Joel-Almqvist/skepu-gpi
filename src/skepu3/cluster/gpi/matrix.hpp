@@ -23,16 +23,23 @@ namespace skepu{
     // and in all other containers. This is an ad hoc solution due to being a demo
     template<typename TT>
     friend class Reduce1D;
-    template<typename TT>
+    template<typename TT, int>
     friend class Map1D;
     template<typename TT>
     friend class FilterClass;
   private:
+
+    using is_skepu_container = decltype(true);
+
     int local_size;
+    long global_size;
+    int last_partition_size;
+
+
     long unsigned comm_size;
 
     // This determines how many objects of type T the communication buffer
-    // will be able to fit. Too small buffer may cause major issues with Scan.
+    // will be able to fit. Too small buffer may cause major issues with Filter.
     // WARNING must be even
     static const int NR_OBJECTS_IN_COMM_BUFFER = 40;
 
@@ -41,6 +48,60 @@ namespace skepu{
     int end_i;
 
     int step;
+
+
+    int get_owner(int index){
+      return std::min((int) std::floor((float) index / step), nr_nodes - 1);
+    }
+
+
+
+    // Puts all elements from start to end (these are global indeces) into
+    // the given GASPI segment. Many to one communication pattern
+    void get_range(
+      int start,
+      int end,
+      int dest_rank,
+      int dest_seg_id,
+      int offset,
+      int notify_id
+      ) {
+
+      int first_elem = -1;
+      int last_elem = -1;
+
+      if(end >= end_i && start <= start_i){
+        // Middle part of the range
+        first_elem = start_i;
+        last_elem = end_i;
+      }
+      else if(start >= start_i && start <= end_i){
+        // The start of the range
+        first_elem = start;
+        last_elem = end <= end_i ? end : end_i;
+      }
+      else if(end <= end_i && end >= start_i){
+        // The end of the range
+        first_elem = start >= start_i ? start : start_i;
+        last_elem = end;
+      }
+
+      if(last_elem != -1){
+
+       gaspi_write_notify(cont_segment_id,
+         sizeof(T) * (first_elem % local_size),
+         dest_rank,
+         dest_seg_id,
+         offset + sizeof(T) * (first_elem - start), // offset remote
+         sizeof(T) * (last_elem + 1 - first_elem), // size
+         notify_id, // notification id
+         rank + 1, // notification value, not used atm
+         queue,
+         GASPI_BLOCK);
+
+      }
+    }
+
 
   public:
 
@@ -67,7 +128,9 @@ namespace skepu{
 
       }
 
+      last_partition_size = step + residual;
       local_size = end_i - start_i + 1;
+      global_size = rows * cols;
 
 
 
@@ -178,6 +241,8 @@ namespace skepu{
         return ((T*) comm_seg_ptr)[0];
       }
     }
+
+
 
 
 
