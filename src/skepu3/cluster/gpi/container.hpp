@@ -25,11 +25,11 @@ namespace skepu{
       gaspi_rank_t nr_nodes;
       gaspi_queue_id_t queue;
 
-      gaspi_segment_id_t cont_segment_id;
-      gaspi_segment_id_t comm_segment_id;
+      gaspi_segment_id_t segment_id;
 
       gaspi_pointer_t cont_seg_ptr;
       gaspi_pointer_t comm_seg_ptr;
+      long comm_offset;
 
 
       Container(){
@@ -43,8 +43,7 @@ namespace skepu{
 
         gaspi_proc_rank(&rank);
         gaspi_proc_num(&nr_nodes);
-        cont_segment_id = created_containers * nr_nodes * 2 + rank;
-        comm_segment_id = created_containers * nr_nodes * 2 + rank + 1;
+        segment_id = created_containers * nr_nodes + rank;
 
         curr_containers++;
         created_containers++;

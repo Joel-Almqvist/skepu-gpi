@@ -33,7 +33,14 @@ namespace skepu{
 
     int local_size;
     long global_size;
+
+    // Store global information about the container
     int last_partition_size;
+    long last_partition_comm_offset;
+
+    // Store global information about the container
+    int norm_partition_size;
+    long norm_partition_comm_offset;
 
 
     long unsigned comm_size;
@@ -47,6 +54,7 @@ namespace skepu{
     int start_i;
     int end_i;
 
+    // TODO remove this, norm_partition_size == step
     int step;
 
 
@@ -88,7 +96,7 @@ namespace skepu{
 
       if(last_elem != -1){
 
-       gaspi_write_notify(cont_segment_id,
+       gaspi_write_notify(segment_id,
          sizeof(T) * (first_elem % local_size),
          dest_rank,
          dest_seg_id,
@@ -129,12 +137,20 @@ namespace skepu{
       }
 
       last_partition_size = step + residual;
+      norm_partition_size = step;
+
       local_size = end_i - start_i + 1;
       global_size = rows * cols;
 
 
+      // For filter we need two ints to show how many objects are in the buffer
+      comm_size = 2 * sizeof(int) + sizeof(T) * NR_OBJECTS_IN_COMM_BUFFER;
 
-      comm_size = 2*sizeof(int) + sizeof(T) * NR_OBJECTS_IN_COMM_BUFFER;
+
+      // This is how much memory is needed for Map with 2 argument currently
+      if(comm_size < sizeof(T) * local_size * 2){
+        comm_size = local_size * 2 * sizeof(T);
+      }
 
       // Guarantee that buffer is large enough for Reduce to work
       if(comm_size < 2 * (sizeof(T) * ((int) std::ceil(std::log2(nr_nodes))) + 1)){
@@ -143,24 +159,29 @@ namespace skepu{
       }
 
 
+
+
       assert(gaspi_segment_create(
-        comm_segment_id,
-        gaspi_size_t{comm_size},
+        segment_id,
+        gaspi_size_t{sizeof(T) * local_size + comm_size},
         GASPI_GROUP_ALL,
         GASPI_BLOCK,
         GASPI_ALLOC_DEFAULT
       ) == GASPI_SUCCESS);
 
 
+      comm_offset = sizeof(T) * local_size;
+      last_partition_comm_offset = sizeof(T) * last_partition_size;
+      norm_partition_comm_offset = sizeof(T) * norm_partition_size;
 
-      assert(gaspi_segment_create(cont_segment_id,
-        gaspi_size_t{sizeof(T) * local_size},
-        GASPI_GROUP_ALL, GASPI_BLOCK, GASPI_ALLOC_DEFAULT
-      ) == GASPI_SUCCESS);
+      // assert(gaspi_segment_create(cont_segment_id,
+      //   gaspi_size_t{sizeof(T) * local_size},
+      //   GASPI_GROUP_ALL, GASPI_BLOCK, GASPI_ALLOC_DEFAULT
+      // ) == GASPI_SUCCESS);
 
 
-      gaspi_segment_ptr(cont_segment_id, &cont_seg_ptr);
-      gaspi_segment_ptr(comm_segment_id, &comm_seg_ptr);
+      gaspi_segment_ptr(segment_id, &cont_seg_ptr);
+      comm_seg_ptr = ((T*) cont_seg_ptr) + local_size;
 
       gaspi_queue_create(&queue, GASPI_BLOCK);
 
@@ -217,10 +238,10 @@ namespace skepu{
         }
 
         gaspi_read_notify(
-          comm_segment_id,
+          segment_id,
           0,
           dest_rank,
-          cont_segment_id + dest_rank - rank, // remote segment id
+          segment_id + dest_rank - rank, // remote segment id
           sizeof(T) * (index - step * dest_rank), // Remote offset
           sizeof(T),
           rank, // Notification id
@@ -230,13 +251,15 @@ namespace skepu{
 
 
         gaspi_notification_id_t notify_id;
+        gaspi_notification_t notify_val = 0;
         gaspi_notify_waitsome(
-          comm_segment_id,
+          segment_id,
           rank,
           1,
           &notify_id,
           GASPI_BLOCK
         );
+        gaspi_notify_reset(segment_id, notify_id, &notify_val);
 
         return ((T*) comm_seg_ptr)[0];
       }

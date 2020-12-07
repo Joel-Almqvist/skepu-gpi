@@ -52,17 +52,18 @@ namespace skepu{
         std::declval<void>()) {
           using T = typename DestCont::value_type;
 
-          int smallest_seg_id = dest_cont.comm_segment_id - cont1.rank;
+          int smallest_seg_id = dest_cont.segment_id - dest_cont.rank;
 
           // Each call to get range builds one nodes buffer
-          for(int i = 0; i < cont1.nr_nodes; i++){
+          for(int i = 0; i < dest_cont.nr_nodes; i++){
             if(i == cont1.nr_nodes - 1){
+              // The destination node contains the unevenly split elements
               cont1.get_range(
                 dest_cont.step * i,
                 dest_cont.global_size - 1,
                 i, // Rank
                 smallest_seg_id + i, // segment id
-                0, // offset
+                dest_cont.last_partition_comm_offset, // offset
                 dest_cont.rank + 1 // notify id
               );
 
@@ -71,7 +72,7 @@ namespace skepu{
                 dest_cont.global_size - 1,
                 i, // Rank
                 smallest_seg_id + i, // segment id
-                sizeof(T) * dest_cont.last_partition_size, // offset
+                dest_cont.last_partition_comm_offset + sizeof(T) * dest_cont.last_partition_size, // offset
                 dest_cont.nr_nodes + dest_cont.rank + 1 // notify id
               );
 
@@ -82,7 +83,7 @@ namespace skepu{
                 dest_cont.step * (i + 1) - 1,
                 i, // Rank
                 smallest_seg_id + i, // segment id
-                0, // offset
+                dest_cont.norm_partition_comm_offset, // offset
                 dest_cont.rank + 1 // notify id must not be 0
               );
 
@@ -91,7 +92,7 @@ namespace skepu{
                 dest_cont.step * (i + 1) - 1,
                 i, // Rank
                 smallest_seg_id + i, // segment id
-                sizeof(T) * dest_cont.step, // offset
+                dest_cont.norm_partition_comm_offset + sizeof(T) * dest_cont.step, // offset
                 dest_cont.nr_nodes + dest_cont.rank + 1 // notify id
               );
             }
@@ -110,14 +111,14 @@ namespace skepu{
 
           for(int i = 0; i < nr_expected_notif_c1; i++){
             gaspi_notify_waitsome(
-              dest_cont.comm_segment_id , //seg id
+              dest_cont.segment_id , //seg id
               cont1.get_owner(dest_cont.start_i) + 1, // notification begin
               nr_expected_notif_c1, // notification number
               &first_id,
               GASPI_BLOCK
             );
 
-            gaspi_notify_reset(dest_cont.comm_segment_id, first_id, &notify_val);
+            gaspi_notify_reset(dest_cont.segment_id, first_id, &notify_val);
 
           }
 
@@ -126,19 +127,20 @@ namespace skepu{
           // between the two containers
           for(int i = 0; i < nr_expected_notif_c2; i++){
             gaspi_notify_waitsome(
-              dest_cont.comm_segment_id , //seg id
+              dest_cont.segment_id , //seg id
               cont2.nr_nodes + cont2.get_owner(dest_cont.start_i) + 1,
               nr_expected_notif_c2, // notification number
               &first_id,
               GASPI_BLOCK
             );
 
-            gaspi_notify_reset(dest_cont.comm_segment_id, first_id, &notify_val);
+            gaspi_notify_reset(dest_cont.segment_id, first_id, &notify_val);
 
           }
 
           T* dest_cont_ptr = (T*) dest_cont.cont_seg_ptr;
           T* dest_comm_ptr = (T*) dest_cont.comm_seg_ptr;
+
           for(int i = 0; i < dest_cont.local_size; i++){
             dest_cont_ptr[i] = func(dest_comm_ptr[i], dest_comm_ptr[i+dest_cont.local_size]);
           }

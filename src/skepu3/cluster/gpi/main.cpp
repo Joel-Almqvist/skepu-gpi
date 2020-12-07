@@ -1,10 +1,11 @@
 #include <iostream>
-#include <reduce.hpp>
-#include <map.hpp>
-#include <filter.hpp>
 #include <GASPI.h>
 #include <vector>
 
+#include <matrix.hpp>
+//#include <reduce.hpp>
+#include <map.hpp>
+//#include <filter.hpp>
 
 
 int main(){
@@ -15,19 +16,16 @@ int main(){
   skepu::Matrix<long> m3{40,40,3};
 
 
-  /*
-  auto map = skepu::Map<2>([](long a, long b) int {
+  auto map = skepu::Map<2>([](long a, long b) long {
     return a*b;
   });
-  */
 
   //skepu::Map<float, 2>(2.2);
 
-  auto map = skepu::Map<2>([](long a) long {
-    return a;
-  });
+  // auto map = skepu::Map<2>([](long a) long {
+  //   return a;
+  // });
 
-  gaspi_barrier(GASPI_GROUP_ALL, GASPI_BLOCK);
   map(m1, m2, m3);
 
   return 0;
