@@ -34,11 +34,10 @@ namespace skepu{
     int local_size;
     long global_size;
 
-    // Store global information about the container
+    // Global information about the container
     int last_partition_size;
     long last_partition_comm_offset;
 
-    // Store global information about the container
     int norm_partition_size;
     long norm_partition_comm_offset;
 
@@ -143,6 +142,10 @@ namespace skepu{
       global_size = rows * cols;
 
 
+      comm_offset = sizeof(T) * local_size;
+      last_partition_comm_offset = sizeof(T) * last_partition_size;
+      norm_partition_comm_offset = sizeof(T) * norm_partition_size;
+
       // For filter we need two ints to show how many objects are in the buffer
       comm_size = 2 * sizeof(int) + sizeof(T) * NR_OBJECTS_IN_COMM_BUFFER;
 
@@ -168,16 +171,6 @@ namespace skepu{
         GASPI_BLOCK,
         GASPI_ALLOC_DEFAULT
       ) == GASPI_SUCCESS);
-
-
-      comm_offset = sizeof(T) * local_size;
-      last_partition_comm_offset = sizeof(T) * last_partition_size;
-      norm_partition_comm_offset = sizeof(T) * norm_partition_size;
-
-      // assert(gaspi_segment_create(cont_segment_id,
-      //   gaspi_size_t{sizeof(T) * local_size},
-      //   GASPI_GROUP_ALL, GASPI_BLOCK, GASPI_ALLOC_DEFAULT
-      // ) == GASPI_SUCCESS);
 
 
       gaspi_segment_ptr(segment_id, &cont_seg_ptr);

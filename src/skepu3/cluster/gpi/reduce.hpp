@@ -14,10 +14,10 @@ namespace skepu{
   template<typename ReduceFunc>
   class Reduce1D{
   private:
-    ReduceFunc rfunc;
+    ReduceFunc func;
   public:
 
-    Reduce1D(ReduceFunc rfunc) : rfunc{rfunc} {};
+    Reduce1D(ReduceFunc func) : func{func} {};
 
      template<typename Container>
      typename Container::value_type operator()(Container& cont){
@@ -31,21 +31,24 @@ namespace skepu{
          // the start of all functions which use these.
          gaspi_barrier(GASPI_GROUP_ALL, GASPI_BLOCK);
 
-         gaspi_notification_id_t first_notify_id;
+         gaspi_notification_id_t notify_id;
 
 
-         T local_sum = rfunc(((T*) cont.cont_seg_ptr)[0], ((T*) cont.cont_seg_ptr)[1]);
+         T local_sum = func(((T*) cont.cont_seg_ptr)[0], ((T*) cont.cont_seg_ptr)[1]);
 
          for(int i = 2; i < cont.local_size; i++){
-           local_sum = rfunc(local_sum, ((T*) cont.cont_seg_ptr)[i]);
+           local_sum = func(local_sum, ((T*) cont.cont_seg_ptr)[i]);
          }
 
          ((T*) cont.comm_seg_ptr)[0] = local_sum;
+
 
          int iterations = std::ceil(std::log2(cont.nr_nodes));
 
          bool received = true;
          int step;
+         int remote_comm_offset;
+         gaspi_notification_t notify_val = 0;
 
          for(int i = 0; i < iterations; i++){
 
@@ -57,13 +60,18 @@ namespace skepu{
              if(cont.rank % (step * 2) == step - 1){
                // Send
 
-                gaspi_write_notify(cont.comm_segment_id,
-                    0,
-                    cont.rank + step,
-                    cont.comm_segment_id + step,
-                    (i + 1) * sizeof(T),
+               // The last rank has a different offset
+               remote_comm_offset = cont.rank + step == cont.nr_nodes - 1 ?
+                  cont.last_partition_comm_offset :
+                  cont.norm_partition_comm_offset;
+
+                gaspi_write_notify(cont.segment_id, // local seg
+                    cont.comm_offset, // local offset
+                    cont.rank + step, // dest rank
+                    cont.segment_id + step,
+                    remote_comm_offset + (i + 1) * sizeof(T), // remote offset
                     sizeof(T),
-                    i,
+                    i + 1, // notif ID
                     123,
                     cont.queue,
                     GASPI_BLOCK);
@@ -74,14 +82,15 @@ namespace skepu{
                // Receive
 
                 gaspi_notify_waitsome(
-                  cont.comm_segment_id,
-                  i,
+                  cont.segment_id,
+                  i + 1,
                   1,
-                  &first_notify_id,
+                  &notify_id,
                   GASPI_BLOCK);
 
+                  gaspi_notify_reset(cont.segment_id, notify_id, &notify_val);
 
-                ((T*) cont.comm_seg_ptr)[0] = rfunc(((T*) cont.comm_seg_ptr)[0],
+                ((T*) cont.comm_seg_ptr)[0] = func(((T*) cont.comm_seg_ptr)[0],
                       ((T*) cont.comm_seg_ptr)[i + 1]);
              }
              else{
@@ -89,6 +98,7 @@ namespace skepu{
              }
            }
          }
+
 
 
          // Distribute the reduces value
@@ -100,11 +110,15 @@ namespace skepu{
 
              if(cont.rank - step >= 0){
 
-              gaspi_write_notify(cont.comm_segment_id,
-                  0,
+               remote_comm_offset = cont.rank - step == cont.nr_nodes - 1 ?
+                  cont.last_partition_comm_offset :
+                  cont.norm_partition_comm_offset;
+
+              gaspi_write_notify(cont.segment_id,
+                  cont.comm_offset,
                   cont.rank - step,
-                  cont.comm_segment_id - step,
-                  0,
+                  cont.segment_id - step, // dest rank
+                  remote_comm_offset, // remote offset
                   sizeof(T),
                   i + iterations,
                   123,
@@ -117,13 +131,17 @@ namespace skepu{
            else if(cont.rank > (cont.nr_nodes - 1) - 2 * step){
                // receive
                gaspi_notify_waitsome(
-                 cont.comm_segment_id,
+                 cont.segment_id,
                  i + iterations,
                  1,
-                 &first_notify_id,
+                 &notify_id,
                  GASPI_BLOCK);
+
+                 gaspi_notify_reset(cont.segment_id, notify_id, &notify_val);
+
            }
          }
+
 
          return ((T*) cont.comm_seg_ptr)[0];
        }
@@ -144,8 +162,8 @@ namespace skepu{
   // Template deduction for classes are not allowed in c++11
   // This solves this problem
   template<typename ReduceFunc>
-  Reduce1D<ReduceFunc> Reduce(ReduceFunc rfunc){
-    return Reduce1D<ReduceFunc>{rfunc};
+  Reduce1D<ReduceFunc> Reduce(ReduceFunc func){
+    return Reduce1D<ReduceFunc>{func};
   }
 
 } // end of namespace skepu
