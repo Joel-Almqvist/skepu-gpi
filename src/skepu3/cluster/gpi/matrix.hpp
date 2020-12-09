@@ -3,14 +3,17 @@
 
 #include <cassert>
 #include <vector>
+#include <array>
 #include <iostream>
 #include <GASPI.h>
 #include <type_traits>
+#include <chrono>
+#include <thread>
+#include <cmath>
 
 #include <utils.hpp>
 #include <container.hpp>
 #include <reduce.hpp>
-#include <cmath>
 // TODO remove include iostream (among more?)
 
 namespace skepu{
@@ -41,13 +44,15 @@ namespace skepu{
     int norm_partition_size;
     long norm_partition_comm_offset;
 
+    // Global information regarding offset
+    long last_partition_vclock_offset;
+    long norm_vclock_offset;
+
+    // This object's offset
+    long vclock_offset;
 
     long unsigned comm_size;
-
-    // This determines how many objects of type T the communication buffer
-    // will be able to fit. Too small buffer may cause major issues with Filter.
-    // WARNING must be even
-    static const int NR_OBJECTS_IN_COMM_BUFFER = 40;
+    int comm_elems;
 
     // Indiciates which indeces this partition handles
     int start_i;
@@ -110,9 +115,90 @@ namespace skepu{
     }
 
 
+    // Reads the remote vclock and updates our
+    void get_vclock(
+      int dest_rank,
+      int dest_seg_id
+      ){
+
+      unsigned long remote_offset = dest_rank == nr_nodes - 1 ?
+        last_partition_vclock_offset :
+        norm_vclock_offset;
+
+      remote_offset = remote_offset + sizeof(unsigned long) * nr_nodes;
+
+      gaspi_read_notify(
+        segment_id,
+        vclock_offset, // local offset
+        dest_rank,
+        dest_seg_id,
+        remote_offset,
+        sizeof(unsigned long) * nr_nodes,
+        1, // notif id
+        queue,
+        GASPI_BLOCK
+      );
+
+      gaspi_notification_t notify_val = 0;
+      gaspi_notification_id_t first_id;
+
+      gaspi_notify_waitsome(
+        segment_id,
+        1, // notif begin
+        1, // number of notif
+        &first_id,
+        GASPI_BLOCK
+      );
+
+      gaspi_notify_reset(segment_id, first_id, &notify_val);
+
+      for(int i = 0; i < nr_nodes; i++){
+        vclock[i] = std::max(vclock[i + nr_nodes], vclock[i]);
+
+      }
+
+    };
+
+
+
+
   public:
 
     using value_type = T;
+
+
+        template<std::size_t size>
+        void wait_for_vclocks(int wait_val, std::array<int, size>& ranks){
+
+          int curr_rank;
+          int curr_seg_id;
+          const int min_seg_id = segment_id - rank;
+
+          for(int i = 0; i < ranks.size(); i++){
+            curr_rank = ranks[i];
+            curr_seg_id = min_seg_id + curr_rank;
+
+
+            if(curr_rank == rank || vclock[curr_rank] >= wait_val){
+              continue;
+            }
+
+
+            while(true){
+              get_vclock(curr_rank, curr_seg_id);
+
+              if(vclock[curr_rank] >= wait_val){
+                break;
+              }
+              else{
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                // Sleep
+              }
+            }
+          }
+        };
+
+
 
     Matrix(){
       std::cout << "Empty constructor called\n";
@@ -146,27 +232,21 @@ namespace skepu{
       last_partition_comm_offset = sizeof(T) * last_partition_size;
       norm_partition_comm_offset = sizeof(T) * norm_partition_size;
 
-      // For filter we need two ints to show how many objects are in the buffer
-      comm_size = 2 * sizeof(int) + sizeof(T) * NR_OBJECTS_IN_COMM_BUFFER;
 
+      // The minimum size for Map and Reduce to work
+      comm_elems = std::max(local_size * 2,
+          (((int) std::ceil(std::log2(nr_nodes))) + 1));
 
-      // This is how much memory is needed for Map with 2 argument currently
-      if(comm_size < sizeof(T) * local_size * 2){
-        comm_size = local_size * 2 * sizeof(T);
-      }
+      comm_size = sizeof(T) * comm_elems;
 
-      // Guarantee that buffer is large enough for Reduce to work
-      if(comm_size < 2 * (sizeof(T) * ((int) std::ceil(std::log2(nr_nodes))) + 1)){
-        throw std::invalid_argument( "Communication buffer is too small. "
-      "It needs to be atleast 2 * log2(#nodes)" );
-      }
-
-
-
+      norm_vclock_offset = sizeof(T) * norm_partition_size + comm_size;
+      last_partition_vclock_offset = sizeof(T) * last_partition_size + comm_size;
+      vclock_offset = comm_offset + comm_size;
 
       assert(gaspi_segment_create(
         segment_id,
-        gaspi_size_t{sizeof(T) * local_size + comm_size},
+        gaspi_size_t{sizeof(T) * local_size + comm_size
+          + 2 * nr_nodes * sizeof(unsigned long)},
         GASPI_GROUP_ALL,
         GASPI_BLOCK,
         GASPI_ALLOC_DEFAULT
@@ -175,6 +255,14 @@ namespace skepu{
 
       gaspi_segment_ptr(segment_id, &cont_seg_ptr);
       comm_seg_ptr = ((T*) cont_seg_ptr) + local_size;
+
+      // Point vclock to the memory after communication segment
+      vclock = (unsigned long*) (((T*) comm_seg_ptr) + comm_elems);
+
+      // TODO Ask Bernd, is this really necessary? Likely not
+      for(int i = 0; i < 2*nr_nodes; i++){
+        vclock[i] = op_nr;
+      }
 
       gaspi_queue_create(&queue, GASPI_BLOCK);
 

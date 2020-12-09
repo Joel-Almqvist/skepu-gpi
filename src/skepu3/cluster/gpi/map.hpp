@@ -52,6 +52,26 @@ namespace skepu{
         std::declval<void>()) {
           using T = typename DestCont::value_type;
 
+
+          std::array<int, dest_cont.nr_nodes> ranks{};
+
+          int rank_from = std::min(cont1.get_owner(dest_cont.start_i),
+            cont2.get_owner(dest_cont.start_i));
+
+          int rank_to = std::max(cont1.get_owner(dest_cont.end_i),
+            cont2.get_owner(dest_cont.end_i));
+
+          // TODO change from std::array to a ptr stored
+          // in the class
+          for(int i = 0; i <= nr_ranks; i++){
+
+            if(i >= rank_from && i <= rank_to){
+
+            }
+          }
+
+
+
           int smallest_seg_id = dest_cont.segment_id - dest_cont.rank;
 
           // Each call to get range builds one nodes buffer

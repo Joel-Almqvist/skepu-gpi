@@ -1,18 +1,18 @@
 #ifndef REDUCE_HPP
 #define REDUCE_HPP
 
-#include <matrix.hpp>
 #include <type_traits>
 #include <numeric>
 #include <cmath>
 
 #include <GASPI.h>
-
+#include <matrix.hpp>
+#include <skeleton_base.hpp>
 
 namespace skepu{
 
   template<typename ReduceFunc>
-  class Reduce1D{
+  class Reduce1D : public _gpi::skeleton_base{
   private:
     ReduceFunc func;
   public:

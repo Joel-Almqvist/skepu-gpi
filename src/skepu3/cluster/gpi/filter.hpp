@@ -8,11 +8,15 @@
 #include <vector>
 
 #include <GASPI.h>
+#include <skeleton_base.hpp>
 
 namespace skepu{
 
+  // TODO This class is no longer working due to code changes, and since it is
+  // not useful it has not been updated. Notably the communication buffer has
+  // a different size and is now using the same segment as the container.
   template<typename Func>
-  class FilterClass{
+  class FilterClass : public _gpi::skeleton_base{
   private:
     Func func;
   public:

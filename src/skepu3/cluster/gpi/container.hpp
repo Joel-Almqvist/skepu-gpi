@@ -20,17 +20,21 @@ namespace skepu{
     private:
       static int counter;
       //protected:
+
+
     protected:
       gaspi_rank_t rank;
       gaspi_rank_t nr_nodes;
       gaspi_queue_id_t queue;
 
-      gaspi_segment_id_t segment_id;
+
 
       gaspi_pointer_t cont_seg_ptr;
       gaspi_pointer_t comm_seg_ptr;
       long comm_offset;
 
+    ;
+      unsigned long op_nr;
 
       Container(){
         if(curr_containers == 0){
@@ -45,11 +49,18 @@ namespace skepu{
         gaspi_proc_num(&nr_nodes);
         segment_id = created_containers * nr_nodes + rank;
 
+        op_nr = 0;
         curr_containers++;
         created_containers++;
       }
 
     public:
+      // TODO move to protected
+      // Must be initialized by derived classes
+      unsigned long* vclock;
+
+      // TODO Move this to protected
+      gaspi_segment_id_t segment_id;
 
       virtual ~Container(){
         gaspi_barrier(GASPI_GROUP_ALL, GASPI_BLOCK);

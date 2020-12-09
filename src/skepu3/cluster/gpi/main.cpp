@@ -11,10 +11,13 @@
 int main(){
 
 
-  skepu::Matrix<long> m1{3,3,1};
-  skepu::Matrix<long> m2{10,10,2};
-  skepu::Matrix<long> m3{40,40,3};
 
+  skepu::Matrix<long> m2{3,3,2};
+  skepu::Matrix<long> m3{4,4,3};
+
+  std::array<int, 4> arr{};
+
+  m2.wait_for_vclocks(0, arr);
 
   auto map = skepu::Map<2>([](long a, long b) long {
     return a*b;
@@ -26,7 +29,6 @@ int main(){
      return a + b;
    });
 
-  std::cout << reduce(m1) << std::endl;
 
   //map(m1, m2, m3);
 
