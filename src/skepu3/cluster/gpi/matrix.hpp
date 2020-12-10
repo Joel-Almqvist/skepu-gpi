@@ -70,6 +70,9 @@ namespace skepu{
 
     // Puts all elements from start to end (these are global indeces) into
     // the given GASPI segment. Many to one communication pattern
+    //
+    // TODO Change this function to be read based, it is currently very
+    // counter intuitive to use
     void get_range(
       int start,
       int end,
@@ -125,16 +128,14 @@ namespace skepu{
         last_partition_vclock_offset :
         norm_vclock_offset;
 
-      remote_offset = remote_offset + sizeof(unsigned long) * nr_nodes;
-
       gaspi_read_notify(
         segment_id,
-        vclock_offset, // local offset
+        vclock_offset + sizeof(long unsigned) * nr_nodes, // local offset
         dest_rank,
         dest_seg_id,
         remote_offset,
         sizeof(unsigned long) * nr_nodes,
-        1, // notif id
+        2 * nr_nodes + 1, // notif id
         queue,
         GASPI_BLOCK
       );
@@ -144,7 +145,7 @@ namespace skepu{
 
       gaspi_notify_waitsome(
         segment_id,
-        1, // notif begin
+        2 * nr_nodes + 1, // notif begin
         1, // number of notif
         &first_id,
         GASPI_BLOCK
@@ -153,10 +154,13 @@ namespace skepu{
       gaspi_notify_reset(segment_id, first_id, &notify_val);
 
       for(int i = 0; i < nr_nodes; i++){
-        vclock[i] = std::max(vclock[i + nr_nodes], vclock[i]);
-
+        if(i == rank){
+          vclock[i] = op_nr;
+        }
+        else{
+          vclock[i] = std::max(vclock[i + nr_nodes], vclock[i]);
+        }
       }
-
     };
 
 
@@ -167,32 +171,28 @@ namespace skepu{
     using value_type = T;
 
 
-        template<std::size_t size>
-        void wait_for_vclocks(int wait_val, std::array<int, size>& ranks){
-
+        //TODO Make this private possibly?
+        void wait_for_vclocks(int wait_val){
           int curr_rank;
           int curr_seg_id;
           const int min_seg_id = segment_id - rank;
 
-          for(int i = 0; i < ranks.size(); i++){
-            curr_rank = ranks[i];
+          for(int i = 0; i < wait_ranks.size(); i++){
+            curr_rank = wait_ranks[i];
             curr_seg_id = min_seg_id + curr_rank;
-
 
             if(curr_rank == rank || vclock[curr_rank] >= wait_val){
               continue;
             }
 
-
             while(true){
               get_vclock(curr_rank, curr_seg_id);
-
               if(vclock[curr_rank] >= wait_val){
                 break;
               }
               else{
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
                 // Sleep
+                std::this_thread::sleep_for(std::chrono::milliseconds(200));
               }
             }
           }
@@ -239,8 +239,16 @@ namespace skepu{
 
       comm_size = sizeof(T) * comm_elems;
 
-      norm_vclock_offset = sizeof(T) * norm_partition_size + comm_size;
-      last_partition_vclock_offset = sizeof(T) * last_partition_size + comm_size;
+
+      norm_vclock_offset = sizeof(T) * norm_partition_size +
+        sizeof(T) * std::max(norm_partition_size * 2,
+          (((int) std::ceil(std::log2(nr_nodes))) + 1));;
+
+      last_partition_vclock_offset = sizeof(T) * last_partition_size +
+        sizeof(T) * std::max(last_partition_size * 2,
+          (((int) std::ceil(std::log2(nr_nodes))) + 1));;
+
+
       vclock_offset = comm_offset + comm_size;
 
       assert(gaspi_segment_create(

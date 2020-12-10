@@ -52,25 +52,30 @@ namespace skepu{
         std::declval<void>()) {
           using T = typename DestCont::value_type;
 
-
-          std::array<int, dest_cont.nr_nodes> ranks{};
-
-          int rank_from = std::min(cont1.get_owner(dest_cont.start_i),
+          int lowest_rank_i_depend_on = std::min(cont1.get_owner(dest_cont.start_i),
             cont2.get_owner(dest_cont.start_i));
 
-          int rank_to = std::max(cont1.get_owner(dest_cont.end_i),
+          int highest_rank_i_depend_on = std::max(cont1.get_owner(dest_cont.end_i),
             cont2.get_owner(dest_cont.end_i));
 
-          // TODO change from std::array to a ptr stored
-          // in the class
-          for(int i = 0; i <= nr_ranks; i++){
+          int lowest_rank_depending_on_me = std::min(dest_cont.get_owner(cont1.start_i),
+            dest_cont.get_owner(cont2.start_i));
 
-            if(i >= rank_from && i <= rank_to){
+          int highest_rank_depending_on_me = std::max(dest_cont.get_owner(cont1.end_i),
+            dest_cont.get_owner(cont2.end_i));
 
-            }
+
+          dest_cont.wait_ranks.clear();
+
+
+          int lowest_rank_to_wait_for = std::min(lowest_rank_i_depend_on, lowest_rank_depending_on_me);
+          int highest_rank_to_wait_for = std::max(highest_rank_i_depend_on, highest_rank_depending_on_me);
+
+          for(int i = lowest_rank_to_wait_for; i <= highest_rank_to_wait_for; i++){
+            dest_cont.wait_ranks.push_back(i);
           }
 
-
+          dest_cont.wait_for_vclocks(dest_cont.op_nr);
 
           int smallest_seg_id = dest_cont.segment_id - dest_cont.rank;
 
@@ -165,8 +170,11 @@ namespace skepu{
             dest_cont_ptr[i] = func(dest_comm_ptr[i], dest_comm_ptr[i+dest_cont.local_size]);
           }
 
-          // TODO replace with vector clock
-          gaspi_barrier(GASPI_GROUP_ALL, GASPI_BLOCK);
+          dest_cont.vclock[dest_cont.rank] = ++dest_cont.op_nr;
+
+          cont1.vclock[cont1.rank] = ++cont1.op_nr;
+
+          cont2.vclock[cont2.rank] = ++cont2.op_nr;
 
      } // end of () operator
 

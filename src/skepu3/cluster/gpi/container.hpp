@@ -2,6 +2,7 @@
 #define CONTAINER_HPP
 #include <GASPI.h>
 #include <iostream>
+#include <vector>
 // TODO remove iostream
 
 namespace skepu{
@@ -19,7 +20,6 @@ namespace skepu{
       friend class FilterClass;
     private:
       static int counter;
-      //protected:
 
 
     protected:
@@ -27,14 +27,18 @@ namespace skepu{
       gaspi_rank_t nr_nodes;
       gaspi_queue_id_t queue;
 
-
+      // Contains all ranks which we wait for before an operation is started
+      std::vector<int> wait_ranks;
+      gaspi_segment_id_t segment_id;
 
       gaspi_pointer_t cont_seg_ptr;
       gaspi_pointer_t comm_seg_ptr;
       long comm_offset;
 
-    ;
       unsigned long op_nr;
+
+      // Must be initialized by derived classes
+      unsigned long* vclock;
 
       Container(){
         if(curr_containers == 0){
@@ -55,13 +59,6 @@ namespace skepu{
       }
 
     public:
-      // TODO move to protected
-      // Must be initialized by derived classes
-      unsigned long* vclock;
-
-      // TODO Move this to protected
-      gaspi_segment_id_t segment_id;
-
       virtual ~Container(){
         gaspi_barrier(GASPI_GROUP_ALL, GASPI_BLOCK);
         curr_containers--;
