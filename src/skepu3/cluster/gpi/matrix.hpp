@@ -68,6 +68,56 @@ namespace skepu{
 
 
 
+    // Puts all of dest_cont's elements within the range in our
+    //communication buffer starting at offset local_offset.
+    void read_range(
+      int start,
+      int end,
+      int local_offset,
+      Matrix& dest_cont
+      ){
+        int lowest_rank = dest_cont.get_owner(start);
+        int highest_rank = dest_cont.get_owner(end);
+
+        int curr_seg_id;
+        int ranks_last_elem;
+        int ranks_first_elem;
+
+        int nr_elems_to_send;
+        int sent_elems = 0;
+
+        for(int i = lowest_rank; i <= highest_rank; i++){
+          curr_seg_id = dest_cont.segment_id - dest_cont.rank + i;
+
+          ranks_last_elem = i == nr_nodes - 1 ?
+            dest_cont.global_size - 1
+            : (i + 1) * dest_cont.step - 1;
+
+          ranks_last_elem = std::min(ranks_last_elem, end);
+          ranks_first_elem = std::max(i * dest_cont.step, start);
+
+          nr_elems_to_send = ranks_last_elem - ranks_first_elem + 1;
+
+          gaspi_read(
+            segment_id,
+            comm_offset + local_offset + sizeof(T) * sent_elems,
+            i,
+            dest_cont.segment_id - rank + i,
+            sizeof(T) * (ranks_first_elem % dest_cont.step), // remote offset
+            sizeof(T) * nr_elems_to_send, // size
+            queue,
+            GASPI_BLOCK
+          );
+          sent_elems += nr_elems_to_send;
+        }
+        gaspi_wait(queue, GASPI_BLOCK);
+    }
+
+
+
+
+
+
     // Puts all elements from start to end (these are global indeces) into
     // the given GASPI segment. Many to one communication pattern
     //
