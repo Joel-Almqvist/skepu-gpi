@@ -34,6 +34,8 @@ namespace skepu{
 
     using is_skepu_container = decltype(true);
 
+    static const int COMM_BUFFER_NR_ELEMS = 50;
+
     int local_size;
     long global_size;
 
@@ -52,7 +54,6 @@ namespace skepu{
     long vclock_offset;
 
     long unsigned comm_size;
-    int comm_elems;
 
     // Indiciates which indeces this partition handles
     int start_i;
@@ -70,6 +71,7 @@ namespace skepu{
 
     // Puts all of dest_cont's elements within the range in our
     //communication buffer starting at offset local_offset.
+    // Inclusive range, [start, end]
     void read_range(
       int start,
       int end,
@@ -168,19 +170,29 @@ namespace skepu{
     }
 
 
-    // Reads the remote vclock and updates our
+    // Reads the remote vclock and updates our own
     void get_vclock(
       int dest_rank,
       int dest_seg_id
       ){
 
+      if(false && rank == 1){
+        std::cout << "Rank " << rank <<  " seg_id "<< (int) segment_id
+        << " old vlock: ";
+        for(int i = 0; i < nr_nodes; i++){
+          std::cout << vclock[i] << ", ";
+        }
+        std::cout << std::endl;
+      }
+
       unsigned long remote_offset = dest_rank == nr_nodes - 1 ?
         last_partition_vclock_offset :
         norm_vclock_offset;
 
+      //
       gaspi_read_notify(
         segment_id,
-        vclock_offset + sizeof(long unsigned) * nr_nodes, // local offset
+        vclock_offset + sizeof(unsigned long) * nr_nodes, // local offset
         dest_rank,
         dest_seg_id,
         remote_offset,
@@ -210,6 +222,14 @@ namespace skepu{
         else{
           vclock[i] = std::max(vclock[i + nr_nodes], vclock[i]);
         }
+      }
+
+      if(false && rank == 1){
+        std::cout << "Rank " << rank <<  " seg_id "<< (int) segment_id << " new vlock: ";
+        for(int i = 0; i < nr_nodes; i++){
+          std::cout << vclock[i] << ", ";
+        }
+        std::cout << std::endl;
       }
     };
 
@@ -242,7 +262,7 @@ namespace skepu{
               }
               else{
                 // Sleep
-                std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
               }
             }
           }
@@ -283,24 +303,19 @@ namespace skepu{
       norm_partition_comm_offset = sizeof(T) * norm_partition_size;
 
 
-      // The minimum size for Map and Reduce to work
-      comm_elems = std::max(local_size * 2,
-          (((int) std::ceil(std::log2(nr_nodes))) + 1));
+      // Guarantee that the comm buffer has size enough for Reduce to work
+      assert(COMM_BUFFER_NR_ELEMS >= ((int) std::ceil(std::log2(nr_nodes))) + 1);
 
-      comm_size = sizeof(T) * comm_elems;
+      comm_size = sizeof(T) * COMM_BUFFER_NR_ELEMS;
 
 
-      norm_vclock_offset = sizeof(T) * norm_partition_size +
-        sizeof(T) * std::max(norm_partition_size * 2,
-          (((int) std::ceil(std::log2(nr_nodes))) + 1));;
-
-      last_partition_vclock_offset = sizeof(T) * last_partition_size +
-        sizeof(T) * std::max(last_partition_size * 2,
-          (((int) std::ceil(std::log2(nr_nodes))) + 1));;
+      norm_vclock_offset = sizeof(T) * norm_partition_size + comm_size;
+      last_partition_vclock_offset = sizeof(T) * last_partition_size + comm_size;
 
 
       vclock_offset = comm_offset + comm_size;
 
+      // 2 * nr_nodes * sizeof(unsigned long) is the size of the vector clock
       assert(gaspi_segment_create(
         segment_id,
         gaspi_size_t{sizeof(T) * local_size + comm_size
@@ -315,7 +330,7 @@ namespace skepu{
       comm_seg_ptr = ((T*) cont_seg_ptr) + local_size;
 
       // Point vclock to the memory after communication segment
-      vclock = (unsigned long*) (((T*) comm_seg_ptr) + comm_elems);
+      vclock = (unsigned long*) (((T*) comm_seg_ptr) + COMM_BUFFER_NR_ELEMS);
 
       // TODO Ask Bernd, is this really necessary? Likely not
       for(int i = 0; i < 2*nr_nodes; i++){
@@ -323,6 +338,7 @@ namespace skepu{
       }
 
       gaspi_queue_create(&queue, GASPI_BLOCK);
+
 
     };
 

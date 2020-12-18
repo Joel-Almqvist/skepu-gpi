@@ -19,8 +19,6 @@ namespace skepu{
       friend class Map1D;
       friend class FilterClass;
     private:
-      static int counter;
-
 
     protected:
       gaspi_rank_t rank;
@@ -40,14 +38,16 @@ namespace skepu{
       // Must be initialized by derived classes
       unsigned long* vclock;
 
-      Container(){
+      Container() : wait_ranks{}{
         if(curr_containers == 0){
 
           // WARNING This is not a good solution, the same program may call
           // multiple init/terminates. However it is unlikely and simply doing
           // this in main leaves the remaining objects in a bad state (crashes).
           gaspi_proc_init(GASPI_BLOCK);
+
         }
+
 
         gaspi_proc_rank(&rank);
         gaspi_proc_num(&nr_nodes);
