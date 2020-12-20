@@ -241,6 +241,11 @@ namespace skepu{
     using value_type = T;
 
 
+    bool operator==(Matrix<T>& that){
+      return this == &that;
+    }
+
+
         //TODO Make this private possibly?
         void wait_for_vclocks(int wait_val){
           int curr_rank;
@@ -348,10 +353,12 @@ namespace skepu{
     }
 
 
+    // TODO add synchronization here
     void set(T scalar){
       for(int i = 0; i < local_size; i ++){
         ((T*) cont_seg_ptr)[i] = scalar;
       }
+      gaspi_barrier(GASPI_GROUP_ALL, GASPI_BLOCK);
     }
 
 

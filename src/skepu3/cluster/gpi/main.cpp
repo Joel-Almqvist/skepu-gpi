@@ -1,6 +1,7 @@
 #include <iostream>
 #include <GASPI.h>
 #include <vector>
+#include <utility>
 
 #include <matrix.hpp>
 #include <reduce.hpp>
@@ -23,26 +24,20 @@ int main(){
   });
 
 
-
-  // for(int i = 0; i < 16; i++){
-  //   m2.set(i,i);
-  // }
-
-
-  map.func_test(m1, m2, m3);
-  map.func_test(m3, m1, m2);
-
-//m3.print();
-map.func_test(m3, m1, m3);
-m3.print();
-
-//map.func_test(m3, m2, m1);
+  for(int i = 0; i < 16; i++){
+    m2.set(i,i);
+  }
 
 
-  //map(m1, m2, m3);
-  //map(m1, m2, m3);
-  //map(m1, m2, m3);
-  //map(m1, m2, m3);
+
+  map(m1, m2, m1);
+
+  //map(m1, m1, m1);
+  //map(m1, m1, m1);
+  //map(m1, m1, m1);
+
+  m1.print();
+
 
   return 0;
 }
