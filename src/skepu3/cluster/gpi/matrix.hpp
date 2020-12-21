@@ -353,12 +353,11 @@ namespace skepu{
     }
 
 
-    // TODO add synchronization here
     void set(T scalar){
       for(int i = 0; i < local_size; i ++){
         ((T*) cont_seg_ptr)[i] = scalar;
       }
-      gaspi_barrier(GASPI_GROUP_ALL, GASPI_BLOCK);
+      vclock[rank] = ++op_nr;
     }
 
 
@@ -368,6 +367,8 @@ namespace skepu{
         for(int i = 0; i < local_size; i ++){
           ((T*) cont_seg_ptr)[i] = from + std::rand() % (to - from);
         }
+
+        vclock[rank] = ++op_nr;
       }
       else{
         std::cout << "Rand only supports matrices of int or long\n";
@@ -380,24 +381,27 @@ namespace skepu{
       if(index >= start_i && index <= end_i){
         ((T*) cont_seg_ptr)[index - start_i] = value;
       }
+      vclock[rank] = ++op_nr;
     }
 
 
     T get(int index){
-      // Prevents unexpected changes in the communication buffer
-      gaspi_barrier(GASPI_GROUP_ALL, GASPI_BLOCK);
 
       if(index >= start_i && index <= end_i){
         // The value is local
         return ((T*) cont_seg_ptr)[index - start_i];
       }
       else{
-
         // The rank holding the value
         int dest_rank = std::floor(((double) index) / step);
         if(dest_rank >= nr_nodes){
           dest_rank = nr_nodes - 1;
         }
+
+        wait_ranks.clear();
+        wait_ranks.push_back(dest_rank);
+        wait_for_vclocks(op_nr);
+
 
         gaspi_read_notify(
           segment_id,
@@ -425,6 +429,7 @@ namespace skepu{
 
         return ((T*) comm_seg_ptr)[0];
       }
+      vclock[rank] = ++op_nr;
     }
 
 
