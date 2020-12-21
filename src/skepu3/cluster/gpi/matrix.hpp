@@ -176,15 +176,6 @@ namespace skepu{
       int dest_seg_id
       ){
 
-      if(false && rank == 1){
-        std::cout << "Rank " << rank <<  " seg_id "<< (int) segment_id
-        << " old vlock: ";
-        for(int i = 0; i < nr_nodes; i++){
-          std::cout << vclock[i] << ", ";
-        }
-        std::cout << std::endl;
-      }
-
       unsigned long remote_offset = dest_rank == nr_nodes - 1 ?
         last_partition_vclock_offset :
         norm_vclock_offset;

@@ -332,12 +332,17 @@ namespace skepu{
     Map1D(Function func) : func{func} {};
 
 
-    template<typename DestCont, typename Cont1, typename Cont2>
-     auto operator()(DestCont& dest_cont, Cont1& cont1, Cont2& cont2) ->
+    /* Performs Map with 1 argument the following way:
+    * 1 - Apply map to locally owned elements
+    * 2 - Wait for all ranks which have elements we need to access remotely
+    * 3 - Gather remote elements and apply Map on them
+    * 4 - Wait until all remote ranks are done reading from us
+    */
+    template<typename DestCont, typename From>
+     auto operator()(DestCont& dest_cont, From& from) ->
      decltype(
        std::declval<typename DestCont::is_skepu_container>(),
-       std::declval<typename Cont1::is_skepu_container>(),
-       std::declval<typename Cont2::is_skepu_container>(),
+       std::declval<typename From::is_skepu_container>(),
 
        // Check that the lambda takes one argument
        std::declval<Function>()(std::declval<typename DestCont::value_type>()),
@@ -345,10 +350,117 @@ namespace skepu{
        std::declval<void>()) {
          using T = typename DestCont::value_type;
 
-         std::cout << "One arg map not yet implemented\n";
+         int lowest_local_i = std::max({from.start_i, dest_cont.start_i});
+         int highest_local_i = std::min({from.end_i, dest_cont.end_i});
+
+         T* dest_ptr = (T*) dest_cont.cont_seg_ptr;
+         T* from_ptr = (T*) from.cont_seg_ptr;
+
+         // Do the local work
+         for(int i = lowest_local_i; i <= highest_local_i; i++){
+           dest_ptr[i - dest_cont.start_i] = func(from_ptr[i - from.start_i]);
+         }
+
+
+         int lowest_rank_i_depend_on = from.get_owner(dest_cont.start_i);
+         int highest_rank_i_depend_on = from.get_owner(dest_cont.end_i);
+
+         dest_cont.wait_ranks.clear();
+         for(int i = lowest_rank_i_depend_on; i <= highest_rank_i_depend_on; i++){
+           if (i != dest_cont.rank)
+             dest_cont.wait_ranks.push_back(i);
+         }
+
+
+         dest_cont.wait_for_vclocks(dest_cont.op_nr);
+
+         int transfer_size = dest_cont.COMM_BUFFER_NR_ELEMS;
+
+         int range1_start = dest_cont.start_i;
+         int range1_end = from.start_i;
+
+         int range2_start = from.end_i;
+         int range2_end = dest_cont.end_i;
+
+         int start;
+         int end;
+         int t = -1;
+
+         T* dest_cptr = (T*) dest_cont.comm_seg_ptr;
+         if(range1_end > range1_start){
+           start = range1_start;
+           end = start;
+
+           while(true){
+             ++t;
+             start = start + t * transfer_size;
+
+             if(start >= range1_end){
+               break;
+             }
+
+             // Minues one because read_range is inclusive
+             end = std::min(end + (t + 1) * transfer_size, range1_end -1);
+             dest_cont.read_range(start, end, 0, from);
+
+
+             for(int i = 0; i <= end - start; i++){
+               dest_ptr[start + i - dest_cont.start_i] = func(dest_cptr[i]);
+             }
+           }
+         }
+
+
+         if(range2_end > range2_start){
+
+           start = range2_start;
+           end = start;
+           t = -1;
+
+           while(true){
+             ++t;
+             start = start + t * transfer_size;
+
+             if(start >= range2_end){
+               break;
+             }
+
+             // Minues one because read_range is inclusive
+             end = std::min(end + (t + 1) * transfer_size, range2_end -1);
+             dest_cont.read_range(start, end, 0, from);
+
+             for(int i = 0; i <= end - start; i++){
+               dest_ptr[start + i - dest_cont.start_i] = func(dest_cptr[i]);
+             }
+           }
+         }
+
+         // Indicate that the first phase of the operation is done
+         dest_cont.vclock[dest_cont.rank] = ++dest_cont.op_nr;
+
+
+         // We must wait for other ranks which may want to read from us
+         int lowest_rank_depending_on_me = dest_cont.get_owner(from.start_i);
+         int highest_rank_depending_on_me = dest_cont.get_owner(from.end_i);
+
+         dest_cont.wait_ranks.clear();
+
+         for(int i = lowest_rank_depending_on_me; i <= highest_rank_depending_on_me; i++){
+           if (i != dest_cont.rank)
+             dest_cont.wait_ranks.push_back(i);
+         }
+
+         dest_cont.wait_for_vclocks(dest_cont.op_nr);
+
+         dest_cont.vclock[dest_cont.rank] = ++dest_cont.op_nr;
+
        }
 
 
+     /*
+     * This function calls the correct implementation of 2 args Map
+     * depending on if the given containers are unique or not.
+     */
      template<typename DestCont, typename Cont1, typename Cont2>
       auto operator()(DestCont& dest_cont, Cont1& cont1, Cont2& cont2) ->
       decltype(
