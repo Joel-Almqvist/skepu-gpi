@@ -334,8 +334,6 @@ namespace skepu{
       }
 
       gaspi_queue_create(&queue, GASPI_BLOCK);
-
-
     };
 
 

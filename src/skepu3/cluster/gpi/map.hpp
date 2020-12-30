@@ -2,13 +2,16 @@
 #define AMP_HPP
 
 #include <matrix.hpp>
+
 #include <type_traits>
 #include <numeric>
 #include <cmath>
 #include <algorithm>
 #include <deque>
 #include <utility>
+#include <mutex>
 
+#include <omp.h>
 #include <GASPI.h>
 
 
@@ -94,6 +97,13 @@ namespace skepu{
 
       int c1_sent_elems = 0;
       int c2_sent_elems = 0;
+
+      std::mutex vlock;
+      // TODO Implement the following scheme
+      // first loop - store elements in vector
+      // use mutex for locking when pushing back
+      // second loop apply func on pairs
+      //
 
 
       while(c1_has_unread || c2_has_unread){
@@ -356,9 +366,17 @@ namespace skepu{
          T* dest_ptr = (T*) dest_cont.cont_seg_ptr;
          T* from_ptr = (T*) from.cont_seg_ptr;
 
+
          // Do the local work
-         for(int i = lowest_local_i; i <= highest_local_i; i++){
-           dest_ptr[i - dest_cont.start_i] = func(from_ptr[i - from.start_i]);
+         #pragma omp_parallel parallel shared(dest_cont, dest_ptr, from_ptr, \
+           from, lowest_local_i, highest_local_i)
+         {
+
+           for(int i = lowest_local_i + omp_get_thread_num();
+             i <= highest_local_i;
+             i = i + omp_get_num_threads()){
+               dest_ptr[i - dest_cont.start_i] = func(from_ptr[i - from.start_i]);
+           }
          }
 
 
@@ -505,10 +523,16 @@ namespace skepu{
           int highest_local_i = std::min({cont1.end_i, cont2.end_i, dest_cont.end_i});
 
           // Do the local work
-          for(int i = lowest_local_i; i <= highest_local_i; i++){
-            ((T*) dest_cont.cont_seg_ptr)[i - dest_cont.start_i] =
-            func(((T*) cont1.cont_seg_ptr)[i - cont1.start_i],
+          #pragma omp_parallel parallel shared(dest_cont, cont2, cont1, lowest_local_i, highest_local_i)
+          {
+
+            for(int i = lowest_local_i + omp_get_thread_num();
+              i <= highest_local_i;
+              i = i + omp_get_num_threads()){
+              ((T*) dest_cont.cont_seg_ptr)[i - dest_cont.start_i] =
+              func(((T*) cont1.cont_seg_ptr)[i - cont1.start_i],
               ((T*) cont2.cont_seg_ptr)[i - cont2.start_i]);
+            }
           }
 
 
@@ -694,11 +718,17 @@ namespace skepu{
          }
 
          // Do the pure local work
-         for(int i = lowest_local_i; i <= highest_local_i; i++){
-           dest_ptr[i - dest_cont.start_i] =
-           func(((T*) cont1.cont_seg_ptr)[i - cont1.start_i],
-            ((T*) cont2.cont_seg_ptr)[i - cont2.start_i]);
+         #pragma omp_parallel parallel shared(dest_cont, cont2, cont1, lowest_local_i, highest_local_i)
+         {
+           for(int i = lowest_local_i + omp_get_thread_num();
+             i <= highest_local_i;
+             i = i + omp_get_num_threads()){
+               dest_ptr[i - dest_cont.start_i] =
+               func(((T*) cont1.cont_seg_ptr)[i - cont1.start_i],
+               ((T*) cont2.cont_seg_ptr)[i - cont2.start_i]);
+           }
          }
+
 
          dest_cont.vclock[dest_cont.rank] = ++dest_cont.op_nr;
 
