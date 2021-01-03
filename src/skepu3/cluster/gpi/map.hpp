@@ -25,9 +25,9 @@ namespace skepu{
 
 
     /*
-    * Fetches all values within the global index range:
-    * [dest_cont.start_i, dest_cont.end_i ] which are stored within "ranks"
-    * part of container 1 and 2.
+    * Fetches the values at the global index [dest_cont.start_i, dest_cont.end_i]
+    * of container 1 and container 2. Ignores any index which the specified
+    * rank is not of the owner of.
     *
     * WARNING: This function assumes distinct containers and it will
     * cause errors otherwise.
@@ -36,11 +36,11 @@ namespace skepu{
     *
     * 1 - Apply func() to c1_val and c2_val and store it in dest_cont
     * 2 - Apply func() to cx_val and its matching orphaned value
-    * 3 - Store the value in dest_cont and add its index to orphans
+    * 3 - Store the value in orphans
     */
     template<typename T>
     void apply_rank_unique(Matrix<T>& dest_cont, Matrix<T>& cont1, Matrix<T>& cont2,
-      int rank, std::deque<std::pair<int, T>>& orphans){
+      int rank, std::deque<std::tuple<unsigned int, unsigned int, T>>& orphans){
 
       int c1_last_elem_global_index = rank != cont1.nr_nodes - 1 ?
        (rank + 1) * cont1.step -1 :
@@ -99,13 +99,8 @@ namespace skepu{
       int c2_sent_elems = 0;
 
       std::mutex vlock;
-      // TODO Implement the following scheme
-      // first loop - store elements in vector
-      // use mutex for locking when pushing back
-      // second loop apply func on pairs
-      //
 
-
+      // Loop while there are elements to transfer from c1 or c2
       while(c1_has_unread || c2_has_unread){
 
         ++t;
@@ -137,91 +132,97 @@ namespace skepu{
         }
 
 
-        bool c1_has_val;
-        bool c2_has_val;
-
-        bool c1_is_orphan;
-        bool c2_is_orphan;
-
-        bool matching_values;
-
-        using it_type = typename std::deque<std::pair<int, T>>::iterator;
-
-        it_type c1_it;
-        it_type c2_it;
-
         T* store_at = (T*) dest_cont.cont_seg_ptr;
         T* comm_ptr = (T*) dest_cont.comm_seg_ptr;
 
 
-        // Handle all values within the communication buffer
-        for(int i = 0; i < transfer_size; i++){
+        std::vector<std::tuple<unsigned int, unsigned int, T>> new_orphans{};
+        #pragma omp_parallel parallel
+        {
+          for(int i = omp_get_thread_num(); i < transfer_size;
+          i = i + omp_get_num_threads()){
 
-          matching_values = false;
-          c1_has_val = c1_rec_from + i <= c1_rec_to;
-          c2_has_val = c2_rec_from + i <= c2_rec_to;
+            if(c1_rec_from + i > c1_rec_to){
+              // Base case
+              break;
+            }
 
-          if(!c1_has_val && !c2_has_val){
-            // Break early if we have no more values
-            break;
-          }
+            // if the matching value exists in the buffer
+            if(c1_rec_from + i >= c2_rec_from && c1_rec_from + i <= c2_rec_to){
+              int pair_offset = transfer_size + c1_rec_from + i - c2_rec_from;
 
-
-          if(c1_rec_from == c2_rec_from && c1_has_val && c2_has_val){
-
-            // If both values are on the same index we can save some operations
-            // by not orphaning the values.
-            matching_values = true;
-            store_at[c1_rec_from - dest_cont.start_i + i]
-            = func(comm_ptr[i], comm_ptr[i + transfer_size]);
-          }
-
-          if(!matching_values && c1_has_val){
-            c1_it = std::find_if(orphans.begin(), orphans.end(),
-              [c1_rec_from, i](typename std::pair<int, T> p) {
-                return p.first == (c1_rec_from + i);
-              });
-
-            c1_is_orphan = c1_it == orphans.end();
-
-
-            if(c1_is_orphan){
-              orphans.push_back(std::pair<int, T>{c1_rec_from + i, comm_ptr[i]});
+              store_at[c1_rec_from - dest_cont.start_i + i]
+              = func(comm_ptr[i], comm_ptr[pair_offset]);
             }
 
             else{
-              store_at[c1_rec_from - dest_cont.start_i + i] =
-                func( c1_it->second, comm_ptr[i]);
-
-              orphans.erase(c1_it);
+              vlock.lock();
+              new_orphans.push_back(std::tuple<unsigned int, unsigned int, T>
+                {c1_rec_from + i, 0, comm_ptr[i]});
+              vlock.unlock();
             }
           }
 
 
+          for(int i = omp_get_thread_num(); i < transfer_size;
+          i = i + omp_get_num_threads()){
 
-          if(!matching_values && c2_has_val){
-            c2_it = std::find_if(orphans.begin(), orphans.end(), [c2_rec_from, i](std::pair<int, T> p) bool {
-              return p.first == (c2_rec_from + i);
-            });
-
-            c2_is_orphan = c2_it == orphans.end();
-
-            if(c2_is_orphan){
-
-              orphans.push_back(std::pair<int, T>{c2_rec_from + i, comm_ptr[i + transfer_size]});
-
+            if(c2_rec_from + i > c2_rec_to){
+              // Base case
+              break;
             }
 
+            if(c2_rec_from + i >= c1_rec_from && c2_rec_from + i <= c1_rec_to){
+              // We have a matching pair but the previous loop already managed
+              // this case
+              continue;
+            }
             else{
-              store_at[c2_rec_from - dest_cont.start_i + i] =
-                func( c2_it->second, comm_ptr[i + transfer_size]);
-
-              orphans.erase(c2_it);
+              vlock.lock();
+              new_orphans.push_back(std::tuple<unsigned int, unsigned int, T>
+                {c2_rec_from + i, 0, comm_ptr[transfer_size + i]});
+              vlock.unlock();
             }
           }
 
-        } // end of for (transfer_size)
+          // Match the new orphans with the previous ones
+          for(int i = omp_get_thread_num(); i < new_orphans.size();
+          i = i + omp_get_num_threads()){
+            auto it = std::find_if(orphans.begin(), orphans.end(), [&new_orphans, i]
+            (typename std::tuple<unsigned int, unsigned int, T> tup){
+              return std::get<0>(tup) ==std::get<0>(new_orphans[i]);
+              }
+            );
 
+            if(it != orphans.end()){
+              int index = std::get<0>(*it);
+              store_at[index - dest_cont.start_i] = func(std::get<2>(*it),
+              std::get<2>(new_orphans[i]));
+
+              // Mark the two ex orphans for removal
+              std::get<1>(new_orphans[i]) = 1;
+              std::get<1>(*it) = 1;
+
+            }
+          }
+        } // End of parallel region
+
+
+
+        orphans.erase(
+          std::remove_if(orphans.begin(), orphans.end(), []
+          (typename std::tuple<unsigned int, unsigned int, T> tup){
+            return std::get<1>(tup) == 1;
+          }),
+          orphans.end()
+        );
+
+        std::copy_if(
+          new_orphans.begin(), new_orphans.end(), std::back_inserter(orphans),
+          [](typename std::tuple<unsigned int, unsigned int, T> tup){
+            return std::get<1>(tup) != 1;
+          }
+        );
       } // end of while()
     } // end of apply_rank_unique()
 
@@ -491,6 +492,7 @@ namespace skepu{
         std::declval<typename DestCont::value_type>()),
         std::declval<void>()){
 
+
           if(cont1 == cont2 || cont1 == dest_cont || cont2 == dest_cont){
 
             apply_on_shared_conts(dest_cont, cont1, cont2);
@@ -546,7 +548,7 @@ namespace skepu{
 
          // Orphans are unique for each destination rank, but shared for multiple
          // calls to the same rank.
-         std::deque<std::pair<int, T>> orphans{};
+         std::deque<std::tuple<unsigned int, unsigned int, T>> orphans{};
          int j;
          while(work_remaining){
 
@@ -623,7 +625,6 @@ namespace skepu{
 
           int highest_rank_i_depend_on = std::max(cont1.get_owner(dest_cont.end_i),
             cont2.get_owner(dest_cont.end_i));
-
 
 
           int lowest_local_i = std::max({cont1.start_i, cont2.start_i, dest_cont.start_i});
